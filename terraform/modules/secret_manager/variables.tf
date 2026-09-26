@@ -52,5 +52,5 @@ variable "secrets" {
     accessors = optional(list(string), [])
   }))
 
-  sensitive = true   # marks entire variable as sensitive — won't appear in logs
+  sensitive = true # marks entire variable as sensitive — won't appear in logs
 }

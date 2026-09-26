@@ -53,7 +53,7 @@ provider "google" {
 locals {
   # Common labels applied to all resources in this environment
   common_labels = {
-    environment = var.environment       # "dev"
+    environment = var.environment # "dev"
     managed_by  = "terraform"
     project     = var.project_id
     team        = "platform-engineering"
@@ -70,16 +70,16 @@ module "app_bucket" {
   source = "../../modules/gcs_bucket"
 
   # ---- Required variables (must be provided) ----
-  bucket_name = var.app_bucket_name   # from terraform.tfvars
-  project_id  = var.project_id        # from terraform.tfvars
-  environment = var.environment       # "dev"
+  bucket_name = var.app_bucket_name # from terraform.tfvars
+  project_id  = var.project_id      # from terraform.tfvars
+  environment = var.environment     # "dev"
 
   # ---- Optional variables (overriding module defaults for dev) ----
-  location           = var.bucket_location  # "US"
-  storage_class      = "STANDARD"           # frequently accessed in dev
-  versioning_enabled = false                # disabled in dev to save cost
-  force_destroy      = true                 # OK to force destroy in dev
-  lifecycle_age_days = 30                   # transition to NEARLINE after 30 days
+  location           = var.bucket_location # "US"
+  storage_class      = "STANDARD"          # frequently accessed in dev
+  versioning_enabled = false               # disabled in dev to save cost
+  force_destroy      = true                # OK to force destroy in dev
+  lifecycle_age_days = 30                  # transition to NEARLINE after 30 days
 
   # Additional labels merged with module's default labels
   additional_labels = local.common_labels
@@ -106,37 +106,37 @@ module "vpc" {
   source = "../../modules/vpc_network"
 
   # ---- Required variables ----
-  vpc_name       = var.vpc_name       # "dev-vpc"
+  vpc_name       = var.vpc_name # "dev-vpc"
   project_id     = var.project_id
-  environment    = var.environment    # "dev"
-  primary_region = var.region         # "us-central1"
+  environment    = var.environment # "dev"
+  primary_region = var.region      # "us-central1"
 
   # ---- Subnet configuration ----
   # Creates ONE subnet in dev. Prod might have multiple subnets per region.
   subnets = [
     {
       name       = "dev-subnet-uc1"
-      region     = var.region           # "us-central1"
-      cidr_range = var.subnet_cidr      # "10.0.1.0/24"
+      region     = var.region      # "us-central1"
+      cidr_range = var.subnet_cidr # "10.0.1.0/24"
 
       # Secondary ranges for GKE (if you later add a GKE cluster)
       secondary_ranges = [
         {
           range_name = "dev-pods"
-          cidr_range = "10.1.0.0/16"    # Pod IPs — 65536 addresses
+          cidr_range = "10.1.0.0/16" # Pod IPs — 65536 addresses
         },
         {
           range_name = "dev-services"
-          cidr_range = "10.2.0.0/20"    # Service IPs — 4096 addresses
+          cidr_range = "10.2.0.0/20" # Service IPs — 4096 addresses
         }
       ]
     }
   ]
 
   # ---- Optional settings ----
-  routing_mode      = "REGIONAL"       # regional routing for dev
-  enable_flow_logs  = false            # disabled in dev (saves cost)
-  ssh_source_ranges = var.ssh_source_ranges  # open in dev, restricted in prod
+  routing_mode      = "REGIONAL"            # regional routing for dev
+  enable_flow_logs  = false                 # disabled in dev (saves cost)
+  ssh_source_ranges = var.ssh_source_ranges # open in dev, restricted in prod
 }
 
 # =============================================================================
@@ -159,7 +159,7 @@ variable "db_password" {
   description = "Database password for dev — injected by pipeline as TF_VAR_db_password"
   type        = string
   sensitive   = true
-  default     = "change-me-via-pipeline"   # placeholder — always override in pipeline
+  default     = "change-me-via-pipeline" # placeholder — always override in pipeline
 }
 
 variable "api_key" {
@@ -177,8 +177,8 @@ module "secrets" {
   secrets = {
     # Database password — used by app service account to connect to Cloud SQL
     "dev-db-password" = {
-      value     = var.db_password    # injected from pipeline secret variable
-      type      = "database"
+      value = var.db_password # injected from pipeline secret variable
+      type  = "database"
       accessors = [
         "serviceAccount:dev-pipeline@${var.project_id}.iam.gserviceaccount.com"
       ]
@@ -186,8 +186,8 @@ module "secrets" {
 
     # External API key — used by app to call third-party services
     "dev-api-key" = {
-      value     = var.api_key        # injected from pipeline secret variable
-      type      = "api-key"
+      value = var.api_key # injected from pipeline secret variable
+      type  = "api-key"
       accessors = [
         "serviceAccount:dev-pipeline@${var.project_id}.iam.gserviceaccount.com"
       ]

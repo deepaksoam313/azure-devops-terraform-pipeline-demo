@@ -34,9 +34,9 @@ terraform {
 resource "google_compute_network" "this" {
   name                            = var.vpc_name
   project                         = var.project_id
-  auto_create_subnetworks         = false   # custom subnets only — no auto subnets
-  routing_mode                    = var.routing_mode  # REGIONAL or GLOBAL
-  delete_default_routes_on_create = false   # keep default internet route
+  auto_create_subnetworks         = false            # custom subnets only — no auto subnets
+  routing_mode                    = var.routing_mode # REGIONAL or GLOBAL
+  delete_default_routes_on_create = false            # keep default internet route
   description                     = "VPC network for ${var.environment} environment - managed by Terraform"
 }
 
@@ -51,9 +51,9 @@ resource "google_compute_subnetwork" "subnets" {
   name                     = each.value.name
   project                  = var.project_id
   region                   = each.value.region
-  network                  = google_compute_network.this.id  # links to the VPC above
-  ip_cidr_range            = each.value.cidr_range           # primary IP range e.g. 10.0.1.0/24
-  private_ip_google_access = true  # allows VMs without public IPs to reach Google APIs
+  network                  = google_compute_network.this.id # links to the VPC above
+  ip_cidr_range            = each.value.cidr_range          # primary IP range e.g. 10.0.1.0/24
+  private_ip_google_access = true                           # allows VMs without public IPs to reach Google APIs
 
   # ---------------------------------------------------------------------------
   # SECONDARY IP RANGES
@@ -77,7 +77,7 @@ resource "google_compute_subnetwork" "subnets" {
     for_each = var.enable_flow_logs ? [1] : []
     content {
       aggregation_interval = "INTERVAL_5_SEC"
-      flow_sampling        = 0.5    # sample 50% of flows
+      flow_sampling        = 0.5 # sample 50% of flows
       metadata             = "INCLUDE_ALL_METADATA"
     }
   }
@@ -95,7 +95,7 @@ resource "google_compute_router" "router" {
   network = google_compute_network.this.id
 
   bgp {
-    asn = 64514  # private ASN for BGP — used with VPN/Interconnect
+    asn = 64514 # private ASN for BGP — used with VPN/Interconnect
   }
 }
 
@@ -110,12 +110,12 @@ resource "google_compute_router_nat" "nat" {
   project                            = var.project_id
   router                             = google_compute_router.router.name
   region                             = var.primary_region
-  nat_ip_allocate_option             = "AUTO_ONLY"           # GCP auto-assigns NAT IPs
-  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"  # NAT all subnets
+  nat_ip_allocate_option             = "AUTO_ONLY"                     # GCP auto-assigns NAT IPs
+  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES" # NAT all subnets
 
   log_config {
     enable = true
-    filter = "ERRORS_ONLY"  # only log NAT errors (not all traffic)
+    filter = "ERRORS_ONLY" # only log NAT errors (not all traffic)
   }
 }
 
@@ -136,14 +136,14 @@ resource "google_compute_firewall" "allow_internal" {
 
   allow {
     protocol = "tcp"
-    ports    = ["0-65535"]  # all TCP ports
+    ports    = ["0-65535"] # all TCP ports
   }
   allow {
     protocol = "udp"
-    ports    = ["0-65535"]  # all UDP ports
+    ports    = ["0-65535"] # all UDP ports
   }
   allow {
-    protocol = "icmp"       # allows ping between VMs
+    protocol = "icmp" # allows ping between VMs
   }
 
   # Only allow traffic from within the VPC's own CIDR ranges
@@ -170,8 +170,8 @@ resource "google_compute_firewall" "allow_ssh" {
     ports    = ["22"]
   }
 
-  source_ranges = var.ssh_source_ranges  # passed in from environment — different per env
-  target_tags   = ["ssh-allowed"]        # only applies to VMs tagged with "ssh-allowed"
+  source_ranges = var.ssh_source_ranges # passed in from environment — different per env
+  target_tags   = ["ssh-allowed"]       # only applies to VMs tagged with "ssh-allowed"
 }
 
 # -----------------------------------------------------------------------------
@@ -187,11 +187,11 @@ resource "google_compute_firewall" "deny_all_ingress" {
 
   description = "Default deny all ingress — explicit allow rules override this"
   direction   = "INGRESS"
-  priority    = 65534   # lowest priority — only fires if nothing else matches
+  priority    = 65534 # lowest priority — only fires if nothing else matches
 
   deny {
-    protocol = "all"  # deny ALL protocols
+    protocol = "all" # deny ALL protocols
   }
 
-  source_ranges = ["0.0.0.0/0"]  # from anywhere
+  source_ranges = ["0.0.0.0/0"] # from anywhere
 }

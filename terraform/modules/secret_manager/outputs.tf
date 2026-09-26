@@ -30,5 +30,5 @@ output "secret_names" {
 output "secret_version_ids" {
   description = "Map of secret name → version resource ID. Points to the latest created version."
   value       = { for k, v in google_secret_manager_secret_version.versions : k => v.id }
-  sensitive   = true   # marked sensitive to prevent accidental exposure in logs
+  sensitive   = true # marked sensitive to prevent accidental exposure in logs
 }

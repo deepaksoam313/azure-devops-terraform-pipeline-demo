@@ -22,7 +22,7 @@
 terraform {
   backend "gcs" {
     # Same bucket as dev — but DIFFERENT prefix = different state file
-    bucket = "YOUR_TFSTATE_BUCKET"   # REPLACE with your actual tfstate bucket name
+    bucket = "YOUR_TFSTATE_BUCKET" # REPLACE with your actual tfstate bucket name
 
     # prod state lives at: gs://YOUR_TFSTATE_BUCKET/prod/terraform.tfstate
     # dev  state lives at: gs://YOUR_TFSTATE_BUCKET/dev/terraform.tfstate

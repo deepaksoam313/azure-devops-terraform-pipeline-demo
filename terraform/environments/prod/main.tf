@@ -50,11 +50,11 @@ provider "google" {
 # -----------------------------------------------------------------------------
 locals {
   common_labels = {
-    environment = var.environment       # "prod"
+    environment = var.environment # "prod"
     managed_by  = "terraform"
     project     = var.project_id
     team        = "platform-engineering"
-    criticality = "high"                # prod-specific label for cost/ops tracking
+    criticality = "high" # prod-specific label for cost/ops tracking
   }
 }
 
@@ -72,15 +72,15 @@ module "app_bucket" {
   # ---- Required ----
   bucket_name = var.app_bucket_name
   project_id  = var.project_id
-  environment = var.environment       # "prod"
+  environment = var.environment # "prod"
 
   # ---- Prod-specific settings ----
   location           = var.bucket_location
   storage_class      = "STANDARD"
-  versioning_enabled = true           # ✅ ENABLED in prod — disaster recovery
-  force_destroy      = false          # ❌ NEVER true in prod — prevents accidental deletion
-  lifecycle_age_days = 90             # longer retention in prod
-  kms_key_name       = var.kms_key_name  # CMEK encryption (empty = Google-managed)
+  versioning_enabled = true             # ✅ ENABLED in prod — disaster recovery
+  force_destroy      = false            # ❌ NEVER true in prod — prevents accidental deletion
+  lifecycle_age_days = 90               # longer retention in prod
+  kms_key_name       = var.kms_key_name # CMEK encryption (empty = Google-managed)
 
   additional_labels = local.common_labels
 
@@ -108,8 +108,8 @@ module "vpc" {
 
   vpc_name       = var.vpc_name
   project_id     = var.project_id
-  environment    = var.environment    # "prod"
-  primary_region = var.region         # "us-central1"
+  environment    = var.environment # "prod"
+  primary_region = var.region      # "us-central1"
 
   # ---- Two subnets for High Availability ----
   subnets = [
@@ -117,15 +117,15 @@ module "vpc" {
       # Primary subnet — us-central1
       name       = "prod-subnet-uc1"
       region     = "us-central1"
-      cidr_range = var.primary_subnet_cidr      # "10.10.1.0/24"
+      cidr_range = var.primary_subnet_cidr # "10.10.1.0/24"
       secondary_ranges = [
         {
           range_name = "prod-pods-uc1"
-          cidr_range = "10.11.0.0/16"           # GKE pod IPs — us-central1
+          cidr_range = "10.11.0.0/16" # GKE pod IPs — us-central1
         },
         {
           range_name = "prod-services-uc1"
-          cidr_range = "10.12.0.0/20"           # GKE service IPs — us-central1
+          cidr_range = "10.12.0.0/20" # GKE service IPs — us-central1
         }
       ]
     },
@@ -133,24 +133,24 @@ module "vpc" {
       # Secondary subnet — us-east1 (different region = HA)
       name       = "prod-subnet-ue1"
       region     = "us-east1"
-      cidr_range = var.secondary_subnet_cidr    # "10.10.2.0/24"
+      cidr_range = var.secondary_subnet_cidr # "10.10.2.0/24"
       secondary_ranges = [
         {
           range_name = "prod-pods-ue1"
-          cidr_range = "10.13.0.0/16"           # GKE pod IPs — us-east1
+          cidr_range = "10.13.0.0/16" # GKE pod IPs — us-east1
         },
         {
           range_name = "prod-services-ue1"
-          cidr_range = "10.14.0.0/20"           # GKE service IPs — us-east1
+          cidr_range = "10.14.0.0/20" # GKE service IPs — us-east1
         }
       ]
     }
   ]
 
   # ---- Prod-specific network settings ----
-  routing_mode      = "GLOBAL"        # global routing for multi-region prod
-  enable_flow_logs  = true            # ✅ ENABLED in prod — security/compliance audit
-  ssh_source_ranges = var.ssh_source_ranges  # corporate IPs only — NOT 0.0.0.0/0
+  routing_mode      = "GLOBAL"              # global routing for multi-region prod
+  enable_flow_logs  = true                  # ✅ ENABLED in prod — security/compliance audit
+  ssh_source_ranges = var.ssh_source_ranges # corporate IPs only — NOT 0.0.0.0/0
 }
 
 # =============================================================================
@@ -177,20 +177,20 @@ variable "api_key" {
 module "secrets" {
   source      = "../../modules/secret_manager"
   project_id  = var.project_id
-  environment = var.environment   # "prod"
+  environment = var.environment # "prod"
 
   secrets = {
     "prod-db-password" = {
-      value     = var.db_password
-      type      = "database"
+      value = var.db_password
+      type  = "database"
       accessors = [
         "serviceAccount:prod-pipeline@${var.project_id}.iam.gserviceaccount.com"
       ]
     }
 
     "prod-api-key" = {
-      value     = var.api_key
-      type      = "api-key"
+      value = var.api_key
+      type  = "api-key"
       accessors = [
         "serviceAccount:prod-pipeline@${var.project_id}.iam.gserviceaccount.com"
       ]

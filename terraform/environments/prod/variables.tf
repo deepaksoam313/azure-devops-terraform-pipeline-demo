@@ -74,7 +74,7 @@ variable "vpc_name" {
 variable "primary_subnet_cidr" {
   description = "CIDR for the primary prod subnet (us-central1)."
   type        = string
-  default     = "10.10.1.0/24"   # different range from dev (10.0.1.0/24) — no overlap
+  default     = "10.10.1.0/24" # different range from dev (10.0.1.0/24) — no overlap
 }
 
 variable "secondary_subnet_cidr" {

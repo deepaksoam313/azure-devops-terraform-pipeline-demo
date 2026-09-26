@@ -25,11 +25,11 @@ terraform {
 # (environments/dev/main.tf or environments/prod/main.tf)
 # -----------------------------------------------------------------------------
 resource "google_storage_bucket" "this" {
-  name          = var.bucket_name        # unique name for the bucket
-  location      = var.location           # e.g. "US", "ASIA", "EU", or specific region
-  project       = var.project_id         # which GCP project to create this in
-  storage_class = var.storage_class      # STANDARD, NEARLINE, COLDLINE, ARCHIVE
-  force_destroy = var.force_destroy      # if true, deletes all objects when bucket is destroyed
+  name          = var.bucket_name   # unique name for the bucket
+  location      = var.location      # e.g. "US", "ASIA", "EU", or specific region
+  project       = var.project_id    # which GCP project to create this in
+  storage_class = var.storage_class # STANDARD, NEARLINE, COLDLINE, ARCHIVE
+  force_destroy = var.force_destroy # if true, deletes all objects when bucket is destroyed
 
   # ---------------------------------------------------------------------------
   # UNIFORM BUCKET-LEVEL ACCESS
@@ -54,11 +54,11 @@ resource "google_storage_bucket" "this" {
   # ---------------------------------------------------------------------------
   lifecycle_rule {
     condition {
-      age = var.lifecycle_age_days   # number of days before transitioning
+      age = var.lifecycle_age_days # number of days before transitioning
     }
     action {
       type          = "SetStorageClass"
-      storage_class = "NEARLINE"     # move to cheaper storage after N days
+      storage_class = "NEARLINE" # move to cheaper storage after N days
     }
   }
 
@@ -96,9 +96,9 @@ resource "google_storage_bucket" "this" {
 # Only created if var.iam_bindings is provided.
 # -----------------------------------------------------------------------------
 resource "google_storage_bucket_iam_binding" "bindings" {
-  for_each = var.iam_bindings   # loop over each role → members mapping
+  for_each = var.iam_bindings # loop over each role → members mapping
 
   bucket  = google_storage_bucket.this.name
-  role    = each.key             # e.g. "roles/storage.objectViewer"
-  members = each.value           # e.g. ["serviceAccount:sa@project.iam.gserviceaccount.com"]
+  role    = each.key   # e.g. "roles/storage.objectViewer"
+  members = each.value # e.g. ["serviceAccount:sa@project.iam.gserviceaccount.com"]
 }

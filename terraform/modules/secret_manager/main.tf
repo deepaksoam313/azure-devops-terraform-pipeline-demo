@@ -50,7 +50,7 @@ resource "google_secret_manager_secret" "secrets" {
   # for_each creates one secret container per entry in var.secrets map
   for_each = var.secrets
 
-  secret_id = each.key       # the name/ID of the secret e.g. "db-password"
+  secret_id = each.key # the name/ID of the secret e.g. "db-password"
   project   = var.project_id
 
   # -------------------------------------------------------------------------
@@ -60,13 +60,13 @@ resource "google_secret_manager_secret" "secrets" {
   # user_managed = you specify exact regions (for compliance/data residency)
   # -------------------------------------------------------------------------
   replication {
-    auto {}   # automatic replication — GCP manages it across regions
+    auto {} # automatic replication — GCP manages it across regions
   }
 
   labels = {
     environment = var.environment
     managed_by  = "terraform"
-    secret_type = lookup(each.value, "type", "generic")  # e.g. "database", "api-key"
+    secret_type = lookup(each.value, "type", "generic") # e.g. "database", "api-key"
   }
 }
 
@@ -84,7 +84,7 @@ resource "google_secret_manager_secret_version" "versions" {
   for_each = var.secrets
 
   # Links to the secret container created above
-  secret      = google_secret_manager_secret.secrets[each.key].id
+  secret = google_secret_manager_secret.secrets[each.key].id
 
   # The actual secret value — comes from var.secrets[key].value
   # This value is marked sensitive so Terraform won't print it in logs
@@ -114,7 +114,7 @@ resource "google_secret_manager_secret_iam_binding" "accessors" {
 
   project   = var.project_id
   secret_id = google_secret_manager_secret.secrets[each.key].secret_id
-  role      = "roles/secretmanager.secretAccessor"  # read-only access to secret value
+  role      = "roles/secretmanager.secretAccessor" # read-only access to secret value
 
   # List of who can access this secret
   # e.g. ["serviceAccount:app@project.iam.gserviceaccount.com"]

@@ -20,7 +20,7 @@
 # GCP PROJECT SETTINGS
 # REPLACE these values with your actual GCP project details
 # -----------------------------------------------------------------------------
-project_id  = "YOUR_GCP_PROJECT_ID"      # e.g. "my-project-dev-123456"
+project_id  = "YOUR_GCP_PROJECT_ID" # e.g. "my-project-dev-123456"
 region      = "us-central1"
 environment = "dev"
 
@@ -29,7 +29,7 @@ environment = "dev"
 # Must be globally unique — add your project name or random suffix
 # Naming convention: <env>-<project>-<purpose>-<random>
 # -----------------------------------------------------------------------------
-app_bucket_name = "dev-myapp-data-bucket-001"   # CHANGE THIS — must be unique
+app_bucket_name = "dev-myapp-data-bucket-001" # CHANGE THIS — must be unique
 bucket_location = "US"
 
 # -----------------------------------------------------------------------------
