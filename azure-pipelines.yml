@@ -98,11 +98,52 @@ stages:
           # Uses the exact version pinned in variables above
           # ------------------------------------------------------------------
           - script: |
-              wget -q https://releases.hashicorp.com/terraform/$(TERRAFORM_VERSION)/terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
-              unzip -q terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
-              sudo mv terraform /usr/local/bin/
-              terraform version
-            displayName: 'Install Terraform $(TERRAFORM_VERSION)'
+                  set -eux
+              
+                  echo "===== STEP STARTED ====="
+                  echo "Terraform version: $(TERRAFORM_VERSION)"
+                  echo "Agent OS: $(Agent.OS)"
+                  echo "Agent OS Version: $(Agent.OSVersion)"
+                  echo "Working directory: $(pwd)"
+              
+                  echo "===== TEST 1: BASIC COMMANDS ====="
+                  whoami
+                  uname -a
+                  df -h
+              
+                  echo "===== TEST 2: NETWORK ====="
+                  curl --version
+              
+                  echo "===== TEST 3: HASHICORP ====="
+                  curl -I --connect-timeout 10 --max-time 30 \
+                    https://releases.hashicorp.com/
+              
+                  echo "===== TEST 4: TERRAFORM DOWNLOAD ====="
+                  TERRAFORM_VERSION="$(TERRAFORM_VERSION)"
+              
+                  curl -fL \
+                    --connect-timeout 10 \
+                    --max-time 120 \
+                    --retry 3 \
+                    --retry-delay 5 \
+                    -o terraform.zip \
+                    "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+              
+                  echo "===== DOWNLOAD COMPLETE ====="
+                  ls -lh terraform.zip
+              
+                  echo "===== UNZIP ====="
+                  unzip -o terraform.zip
+              
+                  echo "===== INSTALL ====="
+                  sudo mv terraform /usr/local/bin/terraform
+                  sudo chmod +x /usr/local/bin/terraform
+              
+                  echo "===== VERIFY ====="
+                  terraform version
+              
+                  echo "===== STEP COMPLETE ====="
+                displayName: 'DEBUG - Install Terraform $(TERRAFORM_VERSION)'
 
           # ------------------------------------------------------------------
           # STEP 3: terraform fmt --check
