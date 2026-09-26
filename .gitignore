@@ -1,0 +1,54 @@
+# =============================================================================
+# .gitignore for GCP + Terraform + Azure DevOps project
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# TERRAFORM — never commit these
+# -----------------------------------------------------------------------------
+**/.terraform/             # provider plugins downloaded by terraform init (large, auto-generated)
+**/*.tfstate               # local state files — use remote GCS backend instead
+**/*.tfstate.backup        # state backups
+**/*.tfplan                # plan binary files — contain sensitive data
+**/.terraform.lock.hcl    # lock file can be committed, but listed here if you prefer not to
+
+# Terraform crash logs
+crash.log
+crash.*.log
+
+# Override files — local developer overrides, not for team
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# -----------------------------------------------------------------------------
+# SECRETS — NEVER commit these under any circumstances
+# -----------------------------------------------------------------------------
+*.json.key                 # service account key files
+*-sa-key*.json             # service account keys
+terraform-sa-key*.json     # our generated SA keys
+.env                       # environment variable files with secrets
+*.pem                      # private key files
+*.p12                      # PKCS12 key files
+secrets.auto.tfvars        # auto-loaded tfvars with secrets
+
+# -----------------------------------------------------------------------------
+# OPERATING SYSTEM
+# -----------------------------------------------------------------------------
+.DS_Store                  # macOS folder metadata
+Thumbs.db                  # Windows thumbnail cache
+*.swp                      # Vim swap files
+*.swo
+
+# -----------------------------------------------------------------------------
+# IDE / EDITOR
+# -----------------------------------------------------------------------------
+.vscode/
+.idea/
+*.iml
+
+# -----------------------------------------------------------------------------
+# LOGS
+# -----------------------------------------------------------------------------
+*.log
+logs/

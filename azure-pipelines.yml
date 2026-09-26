@@ -1,0 +1,492 @@
+# =============================================================================
+# FILE: azure-pipelines.yml
+# PURPOSE: CI/CD pipeline that runs Terraform to provision GCP infrastructure.
+#
+# PIPELINE FLOW:
+# ==============
+#
+#  PR to main branch:
+#  ──────────────────
+#  Validate → Plan (dev) → [human reviews plan in PR comments]
+#
+#  Merge to main branch:
+#  ─────────────────────
+#  Validate → Plan (dev) → Approve? → Apply (dev) → Approve? → Plan (prod) → Approve? → Apply (prod)
+#
+# VISUAL PIPELINE STAGES:
+# ========================
+#
+#  ┌─────────────┐     ┌──────────────┐     ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+#  │  1.Validate │────►│  2.Plan Dev  │────►│ 3.Apply Dev │────►│ 4.Plan Prod  │────►│5.Apply Prod │
+#  │  fmt+lint   │     │  show changes│     │ needs approval    │  show changes│     │needs approval
+#  └─────────────┘     └──────────────┘     └─────────────┘     └──────────────┘     └─────────────┘
+#
+# SECRETS USED (stored in Azure DevOps Variable Groups):
+# ======================================================
+#  Variable Group: gcp-credentials-dev
+#    GCP_SA_KEY        — service account JSON key (marked SECRET)
+#    GCP_PROJECT_ID    — dev GCP project ID
+#    TF_VAR_db_password — database password (marked SECRET)
+#    TF_VAR_api_key     — API key (marked SECRET)
+#
+#  Variable Group: gcp-credentials-prod
+#    GCP_SA_KEY        — prod service account JSON key (marked SECRET)
+#    GCP_PROJECT_ID    — prod GCP project ID
+#    TF_VAR_db_password — prod database password (marked SECRET)
+#    TF_VAR_api_key     — prod API key (marked SECRET)
+#
+# HOW TO SET UP VARIABLE GROUPS IN AZURE DEVOPS:
+# ================================================
+#  1. Go to Pipelines → Library → + Variable Group
+#  2. Create "gcp-credentials-dev" with the variables above
+#  3. Create "gcp-credentials-prod" with prod values
+#  4. Mark sensitive variables as SECRET (lock icon)
+#  5. In Pipeline → Edit → ... → Triggers → authorize variable groups
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# TRIGGERS
+# Controls WHEN this pipeline runs automatically
+# -----------------------------------------------------------------------------
+trigger:
+  branches:
+    include:
+      - main          # run full pipeline (validate + plan + apply) on merge to main
+
+pr:
+  branches:
+    include:
+      - main          # run validate + plan only on pull requests (no apply)
+  paths:
+    include:
+      - terraform/**  # only trigger if terraform files changed
+      - azure-pipelines.yml
+
+# -----------------------------------------------------------------------------
+# PIPELINE-LEVEL VARIABLES
+# Non-sensitive config values shared across all stages
+# -----------------------------------------------------------------------------
+variables:
+  TERRAFORM_VERSION: '1.5.7'          # pin exact version for reproducibility
+  WORKING_DIR_DEV:  'terraform/environments/dev'
+  WORKING_DIR_PROD: 'terraform/environments/prod'
+  TFSTATE_BUCKET:   'YOUR_TFSTATE_BUCKET'   # REPLACE with your actual bucket name
+
+# =============================================================================
+# STAGE 1: VALIDATE
+# Runs on EVERY push (PR and main branch merges)
+# Checks: terraform fmt, terraform validate, tfsec security scan
+# =============================================================================
+stages:
+  - stage: Validate
+    displayName: '1. Validate Terraform Code'
+    jobs:
+      - job: ValidateTerraform
+        displayName: 'Format Check, Validate & Security Scan'
+        pool:
+          vmImage: 'ubuntu-latest'    # fresh Ubuntu VM provided by Microsoft
+
+        steps:
+          # ------------------------------------------------------------------
+          # STEP 1: Checkout code from repo
+          # ------------------------------------------------------------------
+          - checkout: self
+            displayName: 'Checkout Repository'
+
+          # ------------------------------------------------------------------
+          # STEP 2: Install Terraform
+          # Uses the exact version pinned in variables above
+          # ------------------------------------------------------------------
+          - script: |
+              wget -q https://releases.hashicorp.com/terraform/$(TERRAFORM_VERSION)/terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+              unzip -q terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+              sudo mv terraform /usr/local/bin/
+              terraform version
+            displayName: 'Install Terraform $(TERRAFORM_VERSION)'
+
+          # ------------------------------------------------------------------
+          # STEP 3: terraform fmt --check
+          # Checks that all .tf files are properly formatted.
+          # Fails the pipeline if any file needs reformatting.
+          # Fix locally with: terraform fmt -recursive
+          # ------------------------------------------------------------------
+          - script: |
+              echo "Checking Terraform formatting..."
+              terraform fmt -check -recursive ./terraform
+            displayName: 'terraform fmt --check (formatting)'
+
+          # ------------------------------------------------------------------
+          # STEP 4: terraform validate (dev)
+          # Checks syntax and internal consistency of the dev configuration.
+          # Does NOT connect to GCP — purely local validation.
+          # ------------------------------------------------------------------
+          - script: |
+              echo "Validating dev configuration..."
+              terraform init -backend=false
+              terraform validate
+            workingDirectory: $(WORKING_DIR_DEV)
+            displayName: 'terraform validate (dev)'
+
+          # ------------------------------------------------------------------
+          # STEP 5: terraform validate (prod)
+          # Same validation for prod configuration
+          # ------------------------------------------------------------------
+          - script: |
+              echo "Validating prod configuration..."
+              terraform init -backend=false
+              terraform validate
+            workingDirectory: $(WORKING_DIR_PROD)
+            displayName: 'terraform validate (prod)'
+
+          # ------------------------------------------------------------------
+          # STEP 6: tfsec — Terraform security scanner
+          # Scans all .tf files for security misconfigurations.
+          # Examples it catches:
+          #   - GCS buckets without uniform access
+          #   - Firewall rules open to 0.0.0.0/0
+          #   - Missing encryption settings
+          # ------------------------------------------------------------------
+          - script: |
+              echo "Installing tfsec..."
+              curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+              echo "Running security scan..."
+              tfsec ./terraform --minimum-severity MEDIUM
+            displayName: 'tfsec Security Scan'
+            continueOnError: true   # warn but don't fail pipeline on tfsec issues (adjust to false for strict)
+
+  # ===========================================================================
+  # STAGE 2: PLAN DEV
+  # Runs after Validate passes
+  # Connects to GCP, reads current state, shows what WILL change
+  # Posts plan output as a pipeline artifact for review
+  # ===========================================================================
+  - stage: PlanDev
+    displayName: '2. Plan Dev Environment'
+    dependsOn: Validate           # only runs if Validate stage passed
+    condition: succeeded()
+
+    # Load dev secrets from Azure DevOps Variable Group
+    variables:
+      - group: gcp-credentials-dev   # loads GCP_SA_KEY, GCP_PROJECT_ID, TF_VAR_*
+
+    jobs:
+      - job: TerraformPlanDev
+        displayName: 'terraform plan (dev)'
+        pool:
+          vmImage: 'ubuntu-latest'
+
+        steps:
+          - checkout: self
+            displayName: 'Checkout Repository'
+
+          - script: |
+              wget -q https://releases.hashicorp.com/terraform/$(TERRAFORM_VERSION)/terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+              unzip -q terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+              sudo mv terraform /usr/local/bin/
+            displayName: 'Install Terraform'
+
+          # ------------------------------------------------------------------
+          # AUTHENTICATE TO GCP
+          # The service account key is stored in Azure DevOps as secret variable
+          # GCP_SA_KEY. We write it to a temp file and set GOOGLE_CREDENTIALS
+          # so Terraform's Google provider picks it up automatically.
+          # ------------------------------------------------------------------
+          - script: |
+              echo "Authenticating to GCP..."
+              echo "$(GCP_SA_KEY)" > /tmp/gcp-sa-key.json
+              echo "##vso[task.setvariable variable=GOOGLE_CREDENTIALS]/tmp/gcp-sa-key.json"
+            displayName: 'Authenticate to GCP'
+            env:
+              GCP_SA_KEY: $(GCP_SA_KEY)   # pulls from variable group secret
+
+          # ------------------------------------------------------------------
+          # terraform init
+          # Downloads the Google provider plugin and connects to GCS backend
+          # to read the current dev state file.
+          # ------------------------------------------------------------------
+          - script: |
+              terraform init \
+                -backend-config="bucket=$(TFSTATE_BUCKET)" \
+                -backend-config="prefix=dev"
+            workingDirectory: $(WORKING_DIR_DEV)
+            displayName: 'terraform init (dev)'
+            env:
+              GOOGLE_CREDENTIALS: /tmp/gcp-sa-key.json
+
+          # ------------------------------------------------------------------
+          # terraform plan
+          # Compares desired state (code) vs actual state (GCP).
+          # Outputs a plan file (dev.tfplan) used by apply stage.
+          # -out flag saves the plan so apply uses the EXACT same plan.
+          # TF_VAR_* env vars are automatically picked up by Terraform.
+          # ------------------------------------------------------------------
+          - script: |
+              terraform plan \
+                -out=dev.tfplan \
+                -var="project_id=$(GCP_PROJECT_ID)" \
+                -input=false \
+                -no-color 2>&1 | tee plan_output.txt
+              echo "Plan complete. Exit code: $?"
+            workingDirectory: $(WORKING_DIR_DEV)
+            displayName: 'terraform plan (dev)'
+            env:
+              GOOGLE_CREDENTIALS:    /tmp/gcp-sa-key.json
+              TF_VAR_db_password:    $(TF_VAR_db_password)   # from variable group secret
+              TF_VAR_api_key:        $(TF_VAR_api_key)        # from variable group secret
+
+          # ------------------------------------------------------------------
+          # Publish plan output as pipeline artifact
+          # Reviewers can download and read what will change before approving
+          # ------------------------------------------------------------------
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: '$(WORKING_DIR_DEV)/plan_output.txt'
+              artifact: 'dev-terraform-plan'
+              publishLocation: 'pipeline'
+            displayName: 'Publish Plan Output as Artifact'
+            condition: always()
+
+          # ------------------------------------------------------------------
+          # Save the .tfplan binary for use in Apply stage
+          # ------------------------------------------------------------------
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: '$(WORKING_DIR_DEV)/dev.tfplan'
+              artifact: 'dev-tfplan-file'
+              publishLocation: 'pipeline'
+            displayName: 'Save tfplan file for Apply stage'
+
+          # ------------------------------------------------------------------
+          # Cleanup: remove the key file from the agent
+          # ------------------------------------------------------------------
+          - script: rm -f /tmp/gcp-sa-key.json
+            displayName: 'Cleanup GCP credentials'
+            condition: always()
+
+  # ===========================================================================
+  # STAGE 3: APPLY DEV
+  # Runs ONLY on merge to main (not on PRs)
+  # Requires MANUAL APPROVAL before executing
+  # Uses the saved plan from Stage 2 — applies the EXACT same changes reviewed
+  # ===========================================================================
+  - stage: ApplyDev
+    displayName: '3. Apply Dev Environment'
+    dependsOn: PlanDev
+    # Only run apply on main branch merges — NOT on pull requests
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+
+    variables:
+      - group: gcp-credentials-dev
+
+    jobs:
+      # ------------------------------------------------------------------------
+      # DEPLOYMENT JOB — uses "environment" for approval gates
+      # Go to: Pipelines → Environments → dev-gcp → Approvals and checks
+      # Add "Approvals" check → add your email → save
+      # Pipeline will PAUSE here and send you an email to approve/reject
+      # ------------------------------------------------------------------------
+      - deployment: ApplyDevDeployment
+        displayName: 'terraform apply (dev) — requires approval'
+        pool:
+          vmImage: 'ubuntu-latest'
+        environment: 'dev-gcp'        # ← create this in Pipelines → Environments
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  displayName: 'Checkout Repository'
+
+                - script: |
+                    wget -q https://releases.hashicorp.com/terraform/$(TERRAFORM_VERSION)/terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+                    unzip -q terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+                    sudo mv terraform /usr/local/bin/
+                  displayName: 'Install Terraform'
+
+                # Download the plan file saved in Stage 2
+                - task: DownloadPipelineArtifact@2
+                  inputs:
+                    artifactName: 'dev-tfplan-file'
+                    targetPath: '$(WORKING_DIR_DEV)'
+                  displayName: 'Download saved tfplan'
+
+                - script: |
+                    echo "$(GCP_SA_KEY)" > /tmp/gcp-sa-key.json
+                    echo "##vso[task.setvariable variable=GOOGLE_CREDENTIALS]/tmp/gcp-sa-key.json"
+                  displayName: 'Authenticate to GCP'
+                  env:
+                    GCP_SA_KEY: $(GCP_SA_KEY)
+
+                - script: |
+                    terraform init \
+                      -backend-config="bucket=$(TFSTATE_BUCKET)" \
+                      -backend-config="prefix=dev"
+                  workingDirectory: $(WORKING_DIR_DEV)
+                  displayName: 'terraform init'
+                  env:
+                    GOOGLE_CREDENTIALS: /tmp/gcp-sa-key.json
+
+                # ------------------------------------------------------------------
+                # terraform apply
+                # Applies the EXACT plan saved in Stage 2.
+                # -auto-approve skips interactive prompt (pipeline is non-interactive)
+                # The human approval happened at the environment gate above.
+                # ------------------------------------------------------------------
+                - script: |
+                    terraform apply \
+                      -auto-approve \
+                      -input=false \
+                      dev.tfplan
+                  workingDirectory: $(WORKING_DIR_DEV)
+                  displayName: 'terraform apply (dev)'
+                  env:
+                    GOOGLE_CREDENTIALS:    /tmp/gcp-sa-key.json
+                    TF_VAR_db_password:    $(TF_VAR_db_password)
+                    TF_VAR_api_key:        $(TF_VAR_api_key)
+
+                - script: rm -f /tmp/gcp-sa-key.json
+                  displayName: 'Cleanup GCP credentials'
+                  condition: always()
+
+  # ===========================================================================
+  # STAGE 4: PLAN PROD
+  # Runs only after Apply Dev succeeds (on main branch only)
+  # Shows exactly what will change in production before anyone approves
+  # ===========================================================================
+  - stage: PlanProd
+    displayName: '4. Plan Prod Environment'
+    dependsOn: ApplyDev
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+
+    variables:
+      - group: gcp-credentials-prod   # separate variable group for prod secrets
+
+    jobs:
+      - job: TerraformPlanProd
+        displayName: 'terraform plan (prod)'
+        pool:
+          vmImage: 'ubuntu-latest'
+
+        steps:
+          - checkout: self
+
+          - script: |
+              wget -q https://releases.hashicorp.com/terraform/$(TERRAFORM_VERSION)/terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+              unzip -q terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+              sudo mv terraform /usr/local/bin/
+            displayName: 'Install Terraform'
+
+          - script: |
+              echo "$(GCP_SA_KEY)" > /tmp/gcp-sa-key.json
+            displayName: 'Authenticate to GCP'
+            env:
+              GCP_SA_KEY: $(GCP_SA_KEY)
+
+          - script: |
+              terraform init \
+                -backend-config="bucket=$(TFSTATE_BUCKET)" \
+                -backend-config="prefix=prod"
+            workingDirectory: $(WORKING_DIR_PROD)
+            displayName: 'terraform init (prod)'
+            env:
+              GOOGLE_CREDENTIALS: /tmp/gcp-sa-key.json
+
+          - script: |
+              terraform plan \
+                -out=prod.tfplan \
+                -var="project_id=$(GCP_PROJECT_ID)" \
+                -input=false \
+                -no-color 2>&1 | tee plan_output.txt
+            workingDirectory: $(WORKING_DIR_PROD)
+            displayName: 'terraform plan (prod)'
+            env:
+              GOOGLE_CREDENTIALS:    /tmp/gcp-sa-key.json
+              TF_VAR_db_password:    $(TF_VAR_db_password)
+              TF_VAR_api_key:        $(TF_VAR_api_key)
+
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: '$(WORKING_DIR_PROD)/plan_output.txt'
+              artifact: 'prod-terraform-plan'
+              publishLocation: 'pipeline'
+            displayName: 'Publish Prod Plan as Artifact'
+            condition: always()
+
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: '$(WORKING_DIR_PROD)/prod.tfplan'
+              artifact: 'prod-tfplan-file'
+              publishLocation: 'pipeline'
+            displayName: 'Save prod tfplan for Apply stage'
+
+          - script: rm -f /tmp/gcp-sa-key.json
+            displayName: 'Cleanup GCP credentials'
+            condition: always()
+
+  # ===========================================================================
+  # STAGE 5: APPLY PROD
+  # Final stage — requires a SEPARATE manual approval
+  # Applies changes to production GCP environment
+  # ===========================================================================
+  - stage: ApplyProd
+    displayName: '5. Apply Prod Environment'
+    dependsOn: PlanProd
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+
+    variables:
+      - group: gcp-credentials-prod
+
+    jobs:
+      - deployment: ApplyProdDeployment
+        displayName: 'terraform apply (prod) — requires approval'
+        pool:
+          vmImage: 'ubuntu-latest'
+        environment: 'prod-gcp'       # ← create in Pipelines → Environments with stricter approvals
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - script: |
+                    wget -q https://releases.hashicorp.com/terraform/$(TERRAFORM_VERSION)/terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+                    unzip -q terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+                    sudo mv terraform /usr/local/bin/
+                  displayName: 'Install Terraform'
+
+                - task: DownloadPipelineArtifact@2
+                  inputs:
+                    artifactName: 'prod-tfplan-file'
+                    targetPath: '$(WORKING_DIR_PROD)'
+                  displayName: 'Download saved prod tfplan'
+
+                - script: |
+                    echo "$(GCP_SA_KEY)" > /tmp/gcp-sa-key.json
+                  displayName: 'Authenticate to GCP'
+                  env:
+                    GCP_SA_KEY: $(GCP_SA_KEY)
+
+                - script: |
+                    terraform init \
+                      -backend-config="bucket=$(TFSTATE_BUCKET)" \
+                      -backend-config="prefix=prod"
+                  workingDirectory: $(WORKING_DIR_PROD)
+                  displayName: 'terraform init'
+                  env:
+                    GOOGLE_CREDENTIALS: /tmp/gcp-sa-key.json
+
+                - script: |
+                    terraform apply \
+                      -auto-approve \
+                      -input=false \
+                      prod.tfplan
+                  workingDirectory: $(WORKING_DIR_PROD)
+                  displayName: 'terraform apply (prod)'
+                  env:
+                    GOOGLE_CREDENTIALS:    /tmp/gcp-sa-key.json
+                    TF_VAR_db_password:    $(TF_VAR_db_password)
+                    TF_VAR_api_key:        $(TF_VAR_api_key)
+
+                - script: rm -f /tmp/gcp-sa-key.json
+                  displayName: 'Cleanup GCP credentials'
+                  condition: always()
