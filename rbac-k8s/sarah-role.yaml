@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: devops-role
+  namespace: retail-store
+rules:
+- apiGroups: ["", "apps", "autoscaling"]
+  resources: ["pods", "pods/log", "pods/exec",
+              "deployments", "services",
+              "configmaps",
+              "horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch",
+          "create", "update", "patch", "delete"]

@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-test
+  namespace: eso-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-test
+  template:
+    metadata:
+      labels:
+        app: nginx-test
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        env:
+        - name: APP_COLOR
+          valueFrom:
+            secretKeyRef:
+              name: nginx-secret
+              key: APP_COLOR
+        - name: APP_MESSAGE
+          valueFrom:
+            secretKeyRef:
+              name: nginx-secret
+              key: APP_MESSAGE
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: nginx-secret
+              key: DB_PASSWORD

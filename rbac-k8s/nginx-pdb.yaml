@@ -1,0 +1,10 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nginx-pdb
+  namespace: eso-test
+spec:
+  minAvailable: 2        # always keep minimum 2 pods running
+  selector:
+    matchLabels:
+      app: nginx-test
